@@ -1,0 +1,80 @@
+name: Build Express.js
+
+on:
+  push:
+    branches:
+      - ino_dev
+  pull_request:
+    branches:
+      - ino_dev
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build --no-cache -f Dockerfile.build -t express-build .
+      
+      - name: Verify build
+        run: |
+          echo "Docker image built successfully!"
+          docker images | grep express-build
+      
+      - name: Build test image
+        run: docker build --no-cache -f Dockerfile.test -t express-test .
+      
+      - name: Run tests
+        run: docker run --rm express-test
+      
+      - name: Build deploy image
+        run: |
+          docker build --no-cache -t container_deploy_image - <<EOF
+          FROM express-build
+          WORKDIR /app
+          RUN echo 'const express = require("./"); \
+          const app = express(); \
+          app.get("/", (req, res) => res.send("This site works correctly")); \
+          app.listen(3000, () => console.log("App is listening on port 3000"));' > server.js
+          EXPOSE 3000
+          CMD ["node", "server.js"]
+          EOF
+      
+      - name: Start container
+        run: docker run -d -p 3000:3000 --name container_deploy container_deploy_image
+      
+      - name: Wait for container
+        run: sleep 5
+      
+      - name: Validate deployment
+        run: |
+          echo "Validating deployment..."
+          RESPONSE=$(curl -s http://localhost:3000)
+          echo "Validation response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q "This site works correctly"; then
+            echo "Deploy validation SUCCESS"
+          else
+            echo "Deploy validation FAILED"
+            exit 1
+          fi
+      
+      - name: Save Docker image as artifact
+        run: |
+          echo "Publishing Docker image as artifact..."
+          docker save container_deploy_image -o express-app-image.tar
+          chmod 644 express-app-image.tar
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-app-image
+          path: express-app-image.tar
+          retention-days: 7
+      
+      - name: Cleanup
+        if: always()
+        run: docker rm -f container_deploy || true
