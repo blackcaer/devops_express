@@ -22,5 +22,15 @@ jobs:
       
       - name: Verify build
         run: |
-          echo "Docker image built"
+          echo "Docker image built successfully!"
           docker images | grep express-build
+      
+      - name: Save Docker image as artifact
+        run: docker save express-build -o express-build-image.tar
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: express-build-image
+          path: express-build-image.tar
+          retention-days: 7
