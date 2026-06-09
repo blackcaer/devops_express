@@ -1,0 +1,25 @@
+name: Build Express.js
+
+on:
+  push:
+    branches:
+      - ino_dev
+  pull_request:
+    branches:
+      - ino_dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build --no-cache -f Dockerfile.build -t express-build .
+      
+      - name: Verify build
+        run: |
+          echo "Docker image built successfully!"
+          docker images | grep express-build
