@@ -25,12 +25,56 @@ jobs:
           echo "Docker image built successfully!"
           docker images | grep express-build
       
+      - name: Build test image
+        run: docker build --no-cache -f Dockerfile.test -t express-test .
+      
+      - name: Run tests
+        run: docker run --rm express-test
+      
+      - name: Build deploy image
+        run: |
+          docker build --no-cache -t container_deploy_image - <<EOF
+          FROM express-build
+          WORKDIR /app
+          RUN echo 'const express = require("./"); \
+          const app = express(); \
+          app.get("/", (req, res) => res.send("This site works correctly")); \
+          app.listen(3000, () => console.log("App is listening on port 3000"));' > server.js
+          EXPOSE 3000
+          CMD ["node", "server.js"]
+          EOF
+      
+      - name: Start container
+        run: docker run -d -p 3000:3000 --name container_deploy container_deploy_image
+      
+      - name: Wait for container
+        run: sleep 5
+      
+      - name: Validate deployment
+        run: |
+          echo "Validating deployment..."
+          RESPONSE=$(curl -s http://localhost:3000)
+          echo "Validation response: $RESPONSE"
+          if echo "$RESPONSE" | grep -q "This site works correctly"; then
+            echo "Deploy validation SUCCESS"
+          else
+            echo "Deploy validation FAILED"
+            exit 1
+          fi
+      
       - name: Save Docker image as artifact
-        run: docker save express-build -o express-build-image.tar
+        run: |
+          echo "Publishing Docker image as artifact..."
+          docker save container_deploy_image -o express-app-image.tar
+          chmod 644 express-app-image.tar
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: express-build-image
-          path: express-build-image.tar
+          name: express-app-image
+          path: express-app-image.tar
           retention-days: 7
+      
+      - name: Cleanup
+        if: always()
+        run: docker rm -f container_deploy || true
